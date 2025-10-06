@@ -3953,6 +3953,11 @@ void ApiWrap::sendShortcutMessages(
 }
 
 void ApiWrap::sendMessage(MessageToSend &&message) {
+	// AyuGram hook
+	const auto clearReplyTo = prependPseudoReply(message);
+	// AyuGram hook
+
+
 	const auto history = message.action.history;
 	const auto peer = history->peer;
 	auto &textWithTags = message.textWithTags;
@@ -3978,6 +3983,12 @@ void ApiWrap::sendMessage(MessageToSend &&message) {
 		? Data::CanSendTexts(topic)
 		: Data::CanSendTexts(peer);
 
+
+	// // AyuGram hook
+	if (clearReplyTo) {
+		message.action.replyTo.messageId = FullMsgId(message.action.replyTo.messageId.peer, message.action.replyTo.topicRootId);
+		action.replyTo.messageId = FullMsgId(action.replyTo.messageId.peer, action.replyTo.topicRootId);
+	}
 	if (!canSendTexts && !AyuForward::isForwarding(peer->id) || Api::SendDice(message)) {
 		return;
 	}

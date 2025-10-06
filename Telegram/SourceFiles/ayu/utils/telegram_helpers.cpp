@@ -14,6 +14,7 @@
 
 #include "lang_auto.h"
 #include "rc_manager.h"
+#include "api/api_text_entities.h"
 #include "ayu/ayu_worker.h"
 #include "ayu/data/entities.h"
 #include "core/mime_type.h"
@@ -906,6 +907,95 @@ bool mediaDownloadable(const Data::Media *media) {
 		return false;
 	}
 	return true;
+}
+bool prependPseudoReply(Api::MessageToSend &message) {
+	if (!message.action.replyTo || !message.action.history) {
+		return false;
+	}
+	const auto history = message.action.history;
+	if (const auto replyItem = history->session().data().message(message.action.replyTo.messageId)) {
+		if (!replyItem->isDeleted() && !replyItem->isAyuNoForwards()) {
+			return false;
+		}
+		const auto shortify = [&] (QString text, int maxLength)
+		{
+			if (text.isEmpty() || text.length() < maxLength) {
+				return text;
+			}
+			return text.mid(0, maxLength - 1) + "…";
+		};
+		const auto shiftEntities = [&] (QVector<TextWithTags::Tag> &tags, int offset)
+		{
+			if (tags.isEmpty() || !offset) {
+				return;
+			}
+			for (auto &tag : tags) {
+				tag.offset += offset;
+			}
+		};
+
+
+		QString name;
+		const auto from = replyItem->from();
+		const auto user = from ? from->asUser() : nullptr;
+
+		if (from) {
+			name = from->shortName();
+		}
+		if (!name.isEmpty()) {
+			name += "\n";
+		}
+
+
+		auto msgText = !message.action.replyTo.quote.empty() ? message.action.replyTo.quote.text : replyItem->originalText().text;
+		const auto prefix = name + shortify(msgText, 100);
+
+		int prefixLength = 0;
+		if (!message.textWithTags.empty()) {
+			message.textWithTags.text.prepend(prefix + "\n");
+			prefixLength = prefix.length() + 1;
+		}
+
+		shiftEntities(message.textWithTags.tags, prefixLength);
+
+		EntitiesInText newEntities;
+		const int nameLength = name.length();
+
+		newEntities.push_back(EntityInText{
+			EntityType::Blockquote,
+			0,
+			static_cast<int>(prefix.length()),
+			{}
+		});
+
+		if (user && nameLength > 0) {
+			newEntities.push_back(EntityInText{
+				EntityType::Bold,
+				0,
+				nameLength,
+				QString()
+			});
+
+			const auto mentionData = QStringLiteral("%1.%2:%3")
+				.arg(user->id.value)
+				.arg(user->accessHash())
+				.arg(history->session().userId().bare);
+
+			newEntities.push_back(EntityInText{
+				EntityType::MentionName,
+				0,
+				nameLength,
+				mentionData
+			});
+		}
+
+		const auto newTags = TextUtilities::ConvertEntitiesToTextTags(newEntities);
+
+		message.textWithTags.tags.append(newTags);
+
+		return true;
+	}
+	return false;
 }
 
 void resolveAllChats(const std::map<long long, QString> &peers) {

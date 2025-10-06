@@ -7,6 +7,7 @@
 #pragma once
 
 #include "rc_manager.h"
+#include "api/api_common.h"
 #include "ayu/data/entities.h"
 
 #include "core/application.h"
@@ -69,3 +70,5 @@ not_null<Main::Session *> currentSession();
 
 PeerData* getPeerFromDialogId(ID id);
 PeerData* getPeerFromDialogId(unsigned long long id);
+
+bool prependPseudoReply(Api::MessageToSend &message);

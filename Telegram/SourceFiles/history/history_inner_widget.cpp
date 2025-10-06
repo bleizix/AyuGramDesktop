@@ -667,7 +667,7 @@ void HistoryInner::setupSwipeReplyAndBack() {
 			}
 			const auto item = view->data();
 			const auto canSendReply = CanSendReply(item);
-			const auto canReply = canSendReply || (item->allowsForward() && !item->isDeleted());
+			const auto canReply = canSendReply || item->allowsForward();
 			if (!canReply) {
 				return true;
 			}
@@ -2297,9 +2297,7 @@ void HistoryInner::mouseDoubleClickEvent(QMouseEvent *e) {
 			mouseActionCancel();
 			switch (HistoryView::CurrentQuickAction()) {
 			case HistoryView::DoubleClickQuickAction::Reply: {
-				if (!view->data()->isDeleted()) {
-					_widget->replyToMessage(view->data());
-				}
+				_widget->replyToMessage(view->data());
 			} break;
 			case HistoryView::DoubleClickQuickAction::React: {
 				toggleFavoriteReaction(view);
@@ -2785,7 +2783,7 @@ void HistoryInner::showContextMenu(QContextMenuEvent *e, bool showFromTouch) {
 			return;
 		}
 		const auto canSendReply = CanSendReply(item);
-		const auto canReply = canSendReply || (item->allowsForward() && !item->isDeleted());
+		const auto canReply = canSendReply || item->allowsForward();
 		if (canReply) {
 			const auto selected = selectedQuote(item);
 			auto text = (selected
@@ -5156,10 +5154,6 @@ auto HistoryInner::DelegateMixin()
 }
 
 bool CanSendReply(not_null<const HistoryItem*> item) {
-	if (item->isDeleted()) {
-		return false;
-	}
-
 	const auto peer = item->history()->peer;
 	if (const auto topic = item->topic()) {
 		return Data::CanSendAnything(topic);
