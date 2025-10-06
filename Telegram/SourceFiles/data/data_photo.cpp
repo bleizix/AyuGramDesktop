@@ -7,6 +7,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 */
 #include "data/data_photo.h"
 
+#include "ayu/ayu_state.h"
+#include "ayu/features/forward/ayu_sync.h"
 #include "data/data_session.h"
 #include "data/data_reply_preview.h"
 #include "data/data_photo_media.h"
@@ -332,21 +334,25 @@ void PhotoData::load(
 		return true;
 	};
 	const auto done = [=](QImage result, QByteArray bytes) {
-		Expects(_images[valid].loader != nullptr);
-
-		// Find out what progressive photo size have we loaded exactly.
 		auto goodFor = validSize;
-		const auto loadSize = _images[valid].loader->loadSize();
-		if (valid > 0 && _images[valid].byteSize > loadSize) {
-			for (auto i = valid; i != 0;) {
-				--i;
-				const auto required = _images[i].progressivePartSize;
-				if (required > 0 && required <= loadSize) {
-					goodFor = static_cast<PhotoSize>(i);
-					break;
+
+		if (_dc != 1337) {
+			Expects(_images[valid].loader != nullptr);
+
+			// Find out what progressive photo size have we loaded exactly.
+			const auto loadSize = _images[valid].loader->loadSize();
+			if (valid > 0 && _images[valid].byteSize > loadSize) {
+				for (auto i = valid; i != 0;) {
+					--i;
+					const auto required = _images[i].progressivePartSize;
+					if (required > 0 && required <= loadSize) {
+						goodFor = static_cast<PhotoSize>(i);
+						break;
+					}
 				}
 			}
 		}
+
 		if (const auto active = activeMediaView()) {
 			active->set(
 				validSize,
@@ -368,18 +374,53 @@ void PhotoData::load(
 			_owner->photoLoadProgress(this);
 		}
 	};
-	Data::LoadCloudFile(
-		&session(),
-		_images[valid],
-		origin,
-		fromCloud,
-		autoLoading,
-		Data::kImageCacheTag,
-		finalCheck,
-		done,
-		fail,
-		progress,
-		_images[existing].progressivePartSize);
+
+
+	// AyuGram hook
+	if (_dc == 1337) {
+		const auto path = AyuState::fakeDocument(id);
+		if (!path.isEmpty()) {
+			if (auto file = QFile(path); file.exists()) {
+
+				// if (auto read = file.loader->imageData(); read.isNull()) {
+				// 	file.flags |= CloudFile::Flag::Failed;
+				// 	if (const auto onstack = fail) {
+				// 		onstack(true);
+				// 	}
+				// } else if (const auto onstack = done) {
+				// 	onstack(std::move(read), file.loader->bytes());
+				// }
+
+				if (!file.open(QIODevice::ReadOnly)) {
+					LOG(("failed to open file for forward with reason: %1").arg(file.errorString()));
+				}
+				const auto bytes = file.readAll();
+				const auto read = Images::Read({.content = bytes});
+				if (read.image.isNull()) {
+					LOG(("fucked up: null image"));
+				}
+
+				done(read.image, bytes);
+			}
+		}
+	} else {
+		Data::LoadCloudFile(
+			&session(),
+			_images[valid],
+			origin,
+			fromCloud,
+			autoLoading,
+			Data::kImageCacheTag,
+			finalCheck,
+			done,
+			fail,
+			progress,
+			_images[existing].progressivePartSize);
+	}
+
+
+	// AyuGram hook end
+
 
 	if (size == PhotoSize::Large) {
 		_owner->notifyPhotoLayoutChanged(this);

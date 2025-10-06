@@ -94,6 +94,15 @@ MTPVector<MTPMessageEntity> deserializeTextWithEntities(std::vector<char> serial
 	return deserializeObject<MTPVector<MTPMessageEntity>>(serialized);
 }
 
+std::vector<char> serializeAttribute(MTPVector<MTPDocumentAttribute> attribute) {
+	return serializeObject(attribute);
+}
+
+MTPVector<MTPDocumentAttribute> deserializeAttribute (std::vector<char> serialized) {
+	return deserializeObject<MTPVector<MTPDocumentAttribute>>(serialized);
+}
+
+
 int mapItemFlagsToMTPFlags(not_null<HistoryItem*> item) {
 	int flags = 0;
 

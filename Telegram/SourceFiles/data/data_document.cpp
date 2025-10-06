@@ -45,6 +45,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include <QtCore/QMimeType>
 #include <QtCore/QMimeDatabase>
 
+#include "platform/platform_file_utilities.h"
+
 namespace {
 
 constexpr auto kDefaultCoverThumbnailSize = 100;
@@ -1112,6 +1114,36 @@ void DocumentData::save(
 		const QString &toFile,
 		LoadFromCloudSetting fromCloud,
 		bool autoLoading) {
+
+	// AyuGram hook
+	if (_dc == 1337) {
+
+		setLocation(Core::FileLocation(toFile));
+		//setLoadedInMediaCache(true);
+
+
+		QFile file (toFile);
+		if (file.exists() && file.open(QIODevice::ReadOnly)) {
+			Platform::File::PostprocessDownloaded(QFileInfo(file).absoluteFilePath());
+
+
+			if (const auto media = activeMediaView()) {
+				media->setBytes(file.readAll());
+			}
+
+		}
+		session().local().writeFileLocation(mediaKey(),Core::FileLocation(toFile));
+
+
+		_owner->documentLoadDone(this);
+
+		session().notifyDownloaderTaskFinished();
+
+		return;
+	}
+	// AyuGram hook end
+
+
 	if (const auto media = activeMediaView(); media && media->loaded(true)) {
 		auto &l = location(true);
 		if (!toFile.isEmpty()) {

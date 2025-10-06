@@ -10,6 +10,10 @@ namespace AyuState {
 
 std::unordered_map<PeerId, std::unordered_set<MsgId>> hiddenMessages;
 
+// used for fake media load (loads deleted instead)
+// key - fake documentId, value - path to deleted media
+std::unordered_map<uint64, QString> documentIds;
+
 void hide(PeerId peerId, MsgId messageId) {
 	hiddenMessages[peerId].insert(messageId);
 }
@@ -28,6 +32,16 @@ bool isHidden(PeerId peerId, MsgId messageId) {
 
 bool isHidden(not_null<HistoryItem*> item) {
 	return isHidden(item->history()->peer->id, item->id);
+}
+
+void setFakeDocument(uint64 id, QString path) {
+	documentIds[id] = path;
+}
+QString fakeDocument(uint64 id) {
+	if (auto path = documentIds.find(id); path != documentIds.end()) {
+		return path->second;
+	}
+	return QString();
 }
 
 }
