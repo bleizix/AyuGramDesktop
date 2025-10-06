@@ -3368,10 +3368,26 @@ void HistoryItem::setDeleted() {
 		const auto &settings = AyuSettings::getInstance();
 		setAyuHint(settings.deletedMark);
 	} else {
+		startDeletedAnimation();
 		history()->owner().requestItemViewRefresh(this);
 		history()->owner().requestItemResize(this);
 	}
 }
+
+void HistoryItem::startDeletedAnimation() {
+	if (true) {
+		_transparentDeletedAnimation.start(
+		[&](float64 value) {
+			_currentOpacity = value;
+			history()->owner().requestItemRepaint(this);
+		},
+		_currentOpacity,
+		0.6,
+		crl::time(250),
+		anim::easeOutCubic);
+	}
+}
+
 
 bool HistoryItem::isDeleted() const {
 	return _deleted;

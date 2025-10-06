@@ -1188,6 +1188,12 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 		return;
 	}
 
+	if (data()->isDeleted()) {
+		p.save();
+		p.setOpacity(data()->getCurrentOpacity());
+	}
+
+
 	const auto item = data();
 	const auto media = this->media();
 
@@ -1742,6 +1748,9 @@ void Message::draw(Painter &p, const PaintContext &context) const {
 		}
 	} else {
 		_selectionRoundCheckbox = nullptr;
+	}
+	if (data()->isDeleted()) {
+		p.restore();
 	}
 }
 

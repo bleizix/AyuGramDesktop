@@ -13,6 +13,9 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 
 #include <any>
 
+// AyuGram includes
+#include "ui/effects/animations.h"
+
 class HiddenSenderInfo;
 class History;
 
@@ -418,6 +421,9 @@ public:
 		bool isForumPost);
 	void setPostAuthor(const QString &author);
 	void setDeleted();
+	float64 getCurrentOpacity() {
+		return _currentOpacity;
+	};
 	bool isDeleted() const;
 	void applyTTL(TimeId destroyAt);
 	void setAyuHint(const QString &hint);
@@ -709,6 +715,10 @@ private:
 	crl::time _reactionsLastRefreshed = 0;
 
 	bool _deleted = false;
+	void startDeletedAnimation();
+
+	float64 _currentOpacity = 1.;
+	Ui::Animations::Simple _transparentDeletedAnimation;
 	int _unsupportedTTL = 0;
 
 	TimeId _date = 0;
