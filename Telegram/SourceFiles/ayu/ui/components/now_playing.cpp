@@ -10,10 +10,12 @@
 
 #include <QSvgRenderer>
 
+#include "ayu/ayu_settings.h"
 #include "ayu/ui/utils/color_utils.h"
 #include "ayu/ui/utils/palette.h"
 #include "data/data_document.h"
 #include "data/data_document_media.h"
+#include "data/data_file_origin.h"
 #include "data/data_session.h"
 #include "main/main_session.h"
 #include "styles/palette.h"
@@ -28,6 +30,8 @@ class Image;
 namespace Info::Profile {
 
 namespace {
+
+QColor performerColor(255, 255, 255, 153); // white 60%
 
 QRgb AdjustHsl(QRgb color, float luminance, float saturation = -1.0f) {
 	auto hsl = Ayu::Ui::ColorUtils::colorToHSL(color);
@@ -113,8 +117,8 @@ Cover GetCurrentCover(
 	};
 	if (const auto normal = dataMedia->thumbnail()) {
 		return {
-			.pixToDraw = normal->pixSingle(scaled(normal), args),
-			.pixToBg = normal->pix(),
+			.pixToDraw = normal->pixNoCache(scaled(normal), args),
+			.pixToBg = normal->pixNoCache(),
 			.noCover = false
 		};
 	} /*else if (const auto blurred = dataMedia->thumbnailInline()) {
@@ -126,7 +130,7 @@ Cover GetCurrentCover(
 
 	return {
 		.pixToDraw = MakeNoCoverImage(size),
-		.pixToBg =  MakeNoCoverImage(size),
+		.pixToBg = MakeNoCoverImage(size),
 		.noCover = true
 	};
 }
@@ -194,19 +198,18 @@ AyuMusicButton::AyuMusicButton(
 	_title->setAttribute(Qt::WA_TransparentForMouseEvents);
 	_performer->setAttribute(Qt::WA_TransparentForMouseEvents);
 
-	if (_mediaView) {
-		_mediaView->owner()->owner().session().downloaderTaskFinished() | rpl::filter([=]
+	if (_mediaView && _mediaView->owner()->isSongWithCover() && !_mediaView->thumbnail()) {
+		_mediaView->thumbnailWanted(Data::FileOrigin(data.msgId));
+		_mediaView->owner()->owner().session().downloaderTaskFinished(
+		) | rpl::take_while([=]
 		{
-			return _mediaView->loaded();
-		}) | rpl::take(1) | rpl::start_with_next(
-			[=]()
-			{
-				resizeToWidth(widthNoMargins());
-				update();
-				_title->update();
-				_performer->update();
-			},
-			lifetime());
+			if (_mediaView->thumbnail()) {
+				makeCover();
+			}
+			return !_mediaView->thumbnail();
+		}) | rpl::start(lifetime());
+	} else {
+		makeCover();
 	}
 
 	setClickedCallback(std::move(handler));
@@ -219,47 +222,94 @@ void AyuMusicButton::updateData(MusicButtonData data) {
 	_title->setText(data.title);
 	_mediaView = data.mediaView;
 
-	if (_mediaView) {
-		_mediaView->owner()->owner().session().downloaderTaskFinished() | rpl::filter([=]
+	if (_mediaView && _mediaView->owner()->isSongWithCover() && !_mediaView->thumbnail()) {
+		_mediaView->thumbnailWanted(Data::FileOrigin(data.msgId));
+		_mediaView->owner()->owner().session().downloaderTaskFinished(
+		) | rpl::take_while([=]
 		{
-			return _mediaView->loaded();
-		}) | rpl::take(1) | rpl::start_with_next(
-			[=]()
-			{
-				resizeToWidth(widthNoMargins());
-				update();
-				_title->update();
-				_performer->update();
-			},
-			lifetime());
+			if (_mediaView->thumbnail()) {
+				makeCover();
+			}
+			return !_mediaView->thumbnail();
+		}) | rpl::start(lifetime());
+	} else {
+		makeCover();
 	}
 
 	resizeToWidth(widthNoMargins());
 }
 
+void AyuMusicButton::makeCover() {
+	const auto weak = base::make_weak(this);
+	crl::async([=, mediaView = _mediaView]
+	{
+		const auto &settings = AyuSettings::getInstance();
+		const auto &font = st::infoMusicButtonTitle.style.font;
+		const auto skip = st::normalFont->spacew / 2;
+		const auto size = font->height + skip + font->height;
+
+		const auto cover = GetCurrentCover(mediaView, QSize(size, size));
+		QColor bgColor;
+		if (cover.noCover || !settings.adaptiveCoverColor) {
+			bgColor = GetNoCoverBgColor();
+		} else {
+			bgColor = QColor::fromRgb(ExtractColorFromCover(cover.pixToBg));
+		}
+
+		const auto strong = weak.get();
+		if (!strong) {
+			return;
+		}
+
+		strong->_currentCover = {
+			.pix = cover.pixToDraw,
+			.bg = bgColor,
+			.noCover = cover.noCover
+		};
+
+		crl::on_main([=]
+		{
+			const auto strong2 = weak.get();
+			if (!strong2) {
+				return;
+			}
+
+			strong2->repaint();
+			strong2->_title->repaint();
+			strong2->_performer->repaint();
+
+			strong2->_onReady.fire({});
+		});
+	});
+}
+
 void AyuMusicButton::paintEvent(QPaintEvent *e) {
+	if (!_currentCover) {
+		return;
+	}
+
 	auto p = Painter(this);
 
 	const auto &font = st::infoMusicButtonTitle.style.font;
 	const auto skip = st::normalFont->spacew / 2;
 	const auto size = font->height + skip + font->height;
 
-	const auto cover = GetCurrentCover(_mediaView, QSize(size, size));
-	QColor bgColor;
+	const auto cover = _currentCover.value();
 	if (cover.noCover) {
-		bgColor = GetNoCoverBgColor();
-	} else {
-		bgColor = QColor::fromRgb(ExtractColorFromCover(cover.pixToBg));
-	}
-	p.fillRect(e->rect(), bgColor);
-	if (cover.noCover) {
+		p.fillRect(e->rect(), cover.bg);
 		paintRipple(p, QPoint());
+	} else {
+		QRadialGradient gradient(rect().topRight(), rect().width() / 2.0);
+		gradient.setColorAt(0, cover.bg);
+		gradient.setColorAt(1, QColor::fromRgb(AdjustHsl(cover.bg.rgb(), 1.5f)));
+		p.fillRect(rect(), gradient);
 	}
 
-	if (!cover.pixToDraw.isNull()) {
-		if (!cover.noCover) {
+	if (!cover.pix.isNull()) {
+		const auto &settings = AyuSettings::getInstance();
+		if (!cover.noCover && settings.adaptiveCoverColor) {
 			_title->setTextColorOverride(Qt::white);
-			_performer->setTextColorOverride(Qt::lightGray);
+			_performer->setTextColorOverride(performerColor);
 		} else {
 			_title->setTextColorOverride(std::nullopt);
 			_performer->setTextColorOverride(std::nullopt);
@@ -267,7 +317,7 @@ void AyuMusicButton::paintEvent(QPaintEvent *e) {
 
 		auto hq = PainterHighQualityEnabler(p);
 		const auto coverRect = QRect(st::infoMusicButtonPadding.left(), st::infoMusicButtonPadding.top(), size, size);
-		p.drawPixmap(coverRect.topLeft(), cover.pixToDraw);
+		p.drawPixmap(coverRect.topLeft(), cover.pix);
 	} else {
 		_title->setTextColorOverride(std::nullopt);
 		_performer->setTextColorOverride(std::nullopt);

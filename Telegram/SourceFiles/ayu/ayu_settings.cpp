@@ -259,7 +259,7 @@ AyuGramSettings::AyuGramSettings() {
 		AyuAssets::DEFAULT_ICON
 #endif
 		;
-	simpleQuotesAndReplies = true;
+	simpleQuotesAndReplies = false;
 	hideFastShare = false;
 	replaceBottomInfoWithIcons = true;
 	deletedMark = "🧹";
@@ -332,6 +332,8 @@ AyuGramSettings::AyuGramSettings() {
 	voiceConfirmation = false;
 
 	translationProvider = "telegram"; // telegram, google, yandex
+
+	adaptiveCoverColor = true;
 
 	crashReporting = true;
 }
@@ -673,6 +675,10 @@ void set_translationProvider(const QString &val) {
 	settings->translationProvider = val;
 	translationProviderReactive = val;
 	Ayu::Translator::TranslateManager::currentInstance()->resetCache();
+}
+
+void set_adaptiveCoverColor(bool val) {
+	settings->adaptiveCoverColor = val;
 }
 
 void set_crashReporting(bool val) {
