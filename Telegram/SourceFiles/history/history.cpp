@@ -77,7 +77,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 // AyuGram includes
 #include "ayu/ayu_settings.h"
 #include "ayu/ayu_state.h"
-
+#include "ayu/utils/ayu_mapper.h"
 
 namespace {
 
@@ -543,6 +543,9 @@ std::vector<not_null<HistoryItem*>> History::createItems(
 			data,
 			localFlags,
 			detachExistingItem));
+	}
+	if (AyuSettings::getInstance().saveDeletedMessages) {
+		result = AyuMapper::hookDeletedItems(this, std::move(result));
 	}
 	return result;
 }

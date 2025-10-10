@@ -5,6 +5,8 @@
 //
 // Copyright @Radolyn, 2025
 #pragma once
+#include "ayu/data/entities.h"
+#include "history/history.h"
 
 namespace AyuMapper {
 
@@ -17,7 +19,9 @@ template<typename MTPObject>
 std::pair<std::string, std::vector<char>> serializeTextWithEntities(not_null<HistoryItem*> item);
 [[nodiscard]] MTPVector<MTPMessageEntity> deserializeTextWithEntities(std::vector<char> serialized);
 int mapItemFlagsToMTPFlags(not_null<HistoryItem*> item);
-
+std::vector<not_null<HistoryItem*>> hookDeletedItems(
+	not_null<History*> history,
+	std::vector<not_null<HistoryItem*>> originalItems);
 
 std::vector<char> serializeAttribute(MTPVector<MTPDocumentAttribute> attribute);
 MTPVector<MTPDocumentAttribute> deserializeAttribute (std::vector<char> serialized);

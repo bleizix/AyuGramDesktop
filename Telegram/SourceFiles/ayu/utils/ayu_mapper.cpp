@@ -7,7 +7,12 @@
 #include "ayu_mapper.h"
 
 #include "apiwrap.h"
+#include "telegram_helpers.h"
 #include "api/api_text_entities.h"
+#include "ayu/data/ayu_database.h"
+#include "ayu/data/entities.h"
+#include "data/data_session.h"
+#include "data/data_user.h"
 #include "history/history.h"
 #include "history/history_item.h"
 #include "history/history_item_components.h"
@@ -218,4 +223,177 @@ int mapItemFlagsToMTPFlags(not_null<HistoryItem*> item) {
 	return flags;
 }
 
+MTPDmessage::Flags mapToMTPFlags(int ayuFlags) {
+	MTPDmessage::Flags mtpFlags;
+
+	if (ayuFlags & kMessageFlagOut) mtpFlags |= MTPDmessage::Flag::f_out;
+	if (ayuFlags & kMessageFlagMention) mtpFlags |= MTPDmessage::Flag::f_mentioned;
+	if (ayuFlags & kMessageFlagContentUnread) mtpFlags |= MTPDmessage::Flag::f_media_unread;
+	if (ayuFlags & kMessageFlagIsSilent) mtpFlags |= MTPDmessage::Flag::f_silent;
+	if (ayuFlags & kMessageFlagIsPost) mtpFlags |= MTPDmessage::Flag::f_post;
+	if (ayuFlags & kMessageFlagFromScheduled) mtpFlags |= MTPDmessage::Flag::f_from_scheduled;
+	if (ayuFlags & kMessageFlagHideEdit) mtpFlags |= MTPDmessage::Flag::f_edit_hide;
+	if (ayuFlags & kMessageFlagIsPinned) mtpFlags |= MTPDmessage::Flag::f_pinned;
+	if (ayuFlags & kMessageFlagInvertMedia) mtpFlags |= MTPDmessage::Flag::f_invert_media;
+
+	if (ayuFlags & kMessageFlagHasFromId) mtpFlags |= MTPDmessage::Flag::f_from_id;
+	if (ayuFlags & kMessageFlagForwarded) mtpFlags |= MTPDmessage::Flag::f_fwd_from;
+	if (ayuFlags & kMessageFlagHasBotId) mtpFlags |= MTPDmessage::Flag::f_via_bot_id;
+	if (ayuFlags & kMessageFlagReply) mtpFlags |= MTPDmessage::Flag::f_reply_to;
+	if (ayuFlags & kMessageFlagHasMedia) mtpFlags |= MTPDmessage::Flag::f_media;
+	if (ayuFlags & kMessageFlagHasMarkup) mtpFlags |= MTPDmessage::Flag::f_reply_markup;
+	if (ayuFlags & kMessageFlagHasEntities) mtpFlags |= MTPDmessage::Flag::f_entities;
+	if (ayuFlags & kMessageFlagHasViews) mtpFlags |= MTPDmessage::Flag::f_views;
+	if (ayuFlags & kMessageFlagHasReplies) mtpFlags |= MTPDmessage::Flag::f_replies;
+	if (ayuFlags & kMessageFlagEdited) mtpFlags |= MTPDmessage::Flag::f_edit_date;
+	if (ayuFlags & kMessageFlagHasPostAuthor) mtpFlags |= MTPDmessage::Flag::f_post_author;
+	if (ayuFlags & kMessageFlagIsGrouped) mtpFlags |= MTPDmessage::Flag::f_grouped_id;
+	if (ayuFlags & kMessageFlagHasReactions) mtpFlags |= MTPDmessage::Flag::f_reactions;
+	if (ayuFlags & kMessageFlagRestricted) mtpFlags |= MTPDmessage::Flag::f_restriction_reason;
+	if (ayuFlags & kMessageFlagHasTTL) mtpFlags |= MTPDmessage::Flag::f_ttl_period;
+	if (ayuFlags & kMessageFlagHasSavedPeer) mtpFlags |= MTPDmessage::Flag::f_saved_peer_id;
+
+	mtpFlags |= MTPDmessage::Flag::f_legacy;
+
+	return mtpFlags;
+}
+
+MTPMessage mapToMTP(const AyuMessageBase &message, not_null<PeerData*> peer) {
+	// no media at all, only text
+
+	const auto flags = mapToMTPFlags(message.flags);
+
+	auto dialogId = MTP_long(getDialogIdFromPeer(peer));
+	auto peerId = peer->asChat()
+					  ? MTP_peerChat(dialogId)
+					  : peer->asUser()
+							? MTP_peerUser(dialogId)
+							: peer->asChannel()
+								  ? MTP_peerChannel(dialogId)
+								  : MTPpeer();
+
+	auto fromId = MTP_long(message.fromId);
+	auto fromIdPeer = message.fromId < 0 ? MTP_peerChannel(fromId) : MTP_peerUser(fromId);
+
+	return MTP_message(
+		MTP_flags(flags),
+		MTP_int(message.messageId),
+		(flags & MTPDmessage::Flag::f_from_id) ? fromIdPeer : MTPPeer(),
+		MTP_int(0), // from_boosts_applied
+		peerId,
+		(flags & MTPDmessage::Flag::f_saved_peer_id) ? MTP_peerUser(MTP_long(message.userId)) : MTPPeer(),
+		MTPMessageFwdHeader(),
+		(flags & MTPDmessage::Flag::f_via_bot_id) ? MTP_long(0) : MTP_long(0),
+		MTP_long(0),// via_business_bot_id
+		/*(flags & MTPDmessage::Flag::f_reply_to) ? MTP_messageReplyHeader(MTP_flags(MTPDmessageReplyHeader::Flag::f_reply_to_peer_id), MTP_int(message.replyMessageId), MTPPeer(), MTP_int(0)) : */
+		MTPMessageReplyHeader(),
+		MTP_int(message.date),
+		MTP_string(message.text),
+		(flags & MTPDmessage::Flag::f_media) ? MTP_messageMediaEmpty() : MTPMessageMedia(),
+		(flags & MTPDmessage::Flag::f_reply_markup) ? MTP_replyKeyboardHide(MTP_flags(0)) : MTPReplyMarkup(),
+		(flags & MTPDmessage::Flag::f_entities) ? MTP_vector<MTPMessageEntity>() : MTP_vector<MTPMessageEntity>(),
+		(flags & MTPDmessage::Flag::f_views) ? MTP_int(message.views) : MTP_int(0),
+		MTP_int(0),// forwards
+		MTPMessageReplies(),
+		(flags & MTPDmessage::Flag::f_edit_date) ? MTP_int(message.editDate) : MTP_int(0),
+		(flags & MTPDmessage::Flag::f_post_author) ? MTP_string(message.postAuthor) : MTPstring(),
+		(flags & MTPDmessage::Flag::f_grouped_id) ? MTP_long(message.groupedId) : MTP_long(0),
+		(flags & MTPDmessage::Flag::f_reactions)
+			? MTP_messageReactions(MTP_flags(0),
+								   MTP_vector<MTPReactionCount>(),
+								   MTP_vector<MTPMessagePeerReaction>(),
+								   MTP_vector<MTPMessageReactor>())
+			: MTPMessageReactions(),
+		(flags & MTPDmessage::Flag::f_restriction_reason)
+			? MTP_vector<MTPRestrictionReason>()
+			: MTP_vector<MTPRestrictionReason>(),
+		(flags & MTPDmessage::Flag::f_ttl_period) ? MTP_int(0) : MTP_int(0),
+		MTP_int(0),// quick_reply_shortcut_id
+		MTP_long(0),// effect
+		MTPFactCheck(),
+		MTP_int(0),// report_delivery_until_date
+		MTP_long(0),// paid_message_stars
+		MTPSuggestedPost()
+	);
+}
+
+MessageFlags mapToItemFlags(const AyuMessageBase &message) {
+	MessageFlags result;
+	const int ayuFlags = message.flags;
+
+	result |= MessageFlag::HistoryEntry;
+
+	if (ayuFlags & kMessageFlagOut) result |= MessageFlag::Outgoing;
+	if (ayuFlags & kMessageFlagMention) result |= MessageFlag::MentionsMe;
+	if (ayuFlags & kMessageFlagContentUnread) result |= MessageFlag::MediaIsUnread;
+	if (ayuFlags & kMessageFlagIsSilent) result |= MessageFlag::Silent;
+	if (ayuFlags & kMessageFlagIsPost) result |= MessageFlag::Post;
+	if (ayuFlags & kMessageFlagFromScheduled) result |= MessageFlag::IsOrWasScheduled;
+	if (ayuFlags & kMessageFlagHideEdit) result |= MessageFlag::HideEdited;
+	if (ayuFlags & kMessageFlagIsPinned) result |= MessageFlag::Pinned;
+	if (ayuFlags & kMessageFlagInvertMedia) result |= MessageFlag::InvertMedia;
+	if (ayuFlags & kMessageFlagRestricted) result |= MessageFlag::HasRestrictions;
+	if (ayuFlags & kMessageFlagHasFromId) result |= MessageFlag::HasFromId;
+	if (ayuFlags & kMessageFlagHasPostAuthor) result |= MessageFlag::HasPostAuthor;
+	if (ayuFlags & kMessageFlagHasViews) result |= MessageFlag::HasViews;
+	if (ayuFlags & kMessageFlagHasMarkup) result |= MessageFlag::HasReplyMarkup;
+	if (ayuFlags & kMessageFlagReply || ayuFlags & kMessageFlagHasReplies) result |= MessageFlag::HasReplyInfo;
+
+
+	return result;
+}
+
+std::vector<not_null<HistoryItem*>> hookDeletedItems(
+	not_null<History*> history,
+	std::vector<not_null<HistoryItem*>> originalItems) {
+	if (originalItems.empty()) {
+		return originalItems;
+	}
+
+	std::sort(originalItems.begin(),
+			  originalItems.end(),
+			  [](not_null<HistoryItem*> a, not_null<HistoryItem*> b)
+			  {
+				  return a->id < b->id;
+			  });
+	ID minId = originalItems.front()->id.bare;
+	ID maxId = originalItems.back()->id.bare;
+
+	const auto peer = history->peer.get();
+	const ID userId = history->session().userId().bare;
+	const ID dialogId = getDialogIdFromPeer(peer);
+	auto deletedFromDb = AyuDatabase::getDeletedMessages(userId, dialogId, 0, minId, maxId, 200);
+
+	if (deletedFromDb.empty()) {
+		return originalItems;
+	}
+
+	originalItems.reserve(originalItems.size() + deletedFromDb.size());
+	for (const auto &deletedMsg : deletedFromDb) {
+		const auto id = FullMsgId(peer->id, deletedMsg.messageId);
+
+		if (history->owner().message(id)) {
+			continue;
+		}
+
+		auto item = history->createItem(
+			id.msg.bare,
+			mapToMTP(deletedMsg, history->peer),
+			mapToItemFlags(deletedMsg),
+			true,
+			false
+		);
+		item->setDeleted();
+		originalItems.emplace_back(item);
+	}
+
+	std::sort(originalItems.begin(),
+			  originalItems.end(),
+			  [](not_null<HistoryItem*> a, not_null<HistoryItem*> b)
+			  {
+				  return a->id < b->id;
+			  });
+
+	return originalItems;
+}
 }
