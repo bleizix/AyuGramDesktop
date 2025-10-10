@@ -3382,7 +3382,7 @@ void HistoryItem::startDeletedAnimation() {
 			history()->owner().requestItemRepaint(this);
 		},
 		_currentOpacity,
-		0.6,
+		0.7,
 		crl::time(250),
 		anim::easeOutCubic);
 	}
