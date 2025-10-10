@@ -136,8 +136,23 @@ void processMediaAndAddToDb(
 	};
 
 	if (const auto media = item->media(); media && mediaDownloadable(media)) {
-
 		Main::Session* session = &item->history()->session();
+
+		if (!media->photo()) {
+			crl::async([=, message = std::move(message)]() mutable
+			{
+				AyuSync::loadDocuments(session, {item});
+
+				QString mediaPathStr = AyuSync::filePath(session, media);
+				std::string mediaPath = mediaPathStr.toStdString();
+
+				message.mediaPath = mediaPath;
+				message.documentType = DOCUMENT_TYPE_PHOTO;
+				addFunction(message);
+			});
+			return;
+
+		}
 
 		int documentType = 0;
 		std::string mimeType;
